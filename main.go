@@ -20,13 +20,15 @@ func main() {
 	}
 
 	subcommand := os.Args[1]
-	var direction float64
+	var animType string
 
 	switch subcommand {
-	case "clockwise":
-		direction = 1.0
-	case "anticlockwise":
-		direction = -1.0
+	case "clockwise", "anticlockwise":
+		animType = "rotate"
+	case "hue":
+		animType = "hue"
+	case "zoom":
+		animType = "zoom"
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n", subcommand)
 		printUsage()
@@ -67,10 +69,35 @@ func main() {
 	}
 
 	// Generate frames
-	frames, err := generateFrames(img, direction, *frameCount)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-		os.Exit(1)
+	var frames []*image.Paletted
+	switch animType {
+	case "rotate":
+		var direction float64
+		if subcommand == "clockwise" {
+			direction = 1.0
+		} else {
+			direction = -1.0
+		}
+		var err error
+		frames, err = generateRotateFrames(img, direction, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
+	case "hue":
+		var err error
+		frames, err = generateHueFrames(img, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
+	case "zoom":
+		var err error
+		frames, err = generateZoomFrames(img, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Create animated GIF
@@ -96,9 +123,11 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: animoji <clockwise|anticlockwise> -in <input> -out <output> [flags]\n")
+	fmt.Fprintf(os.Stderr, "Usage: animoji <clockwise|anticlockwise|hue|zoom> -in <input> -out <output> [flags]\n")
 	fmt.Fprintf(os.Stderr, "  clockwise: Rotate image clockwise\n")
 	fmt.Fprintf(os.Stderr, "  anticlockwise: Rotate image anticlockwise\n")
+	fmt.Fprintf(os.Stderr, "  hue: Cycle through hue range\n")
+	fmt.Fprintf(os.Stderr, "  zoom: Zoom image in (up to 6x)\n")
 	fmt.Fprintf(os.Stderr, "  -in: Input image file (PNG or JPEG)\n")
 	fmt.Fprintf(os.Stderr, "  -out: Output GIF file\n")
 	fmt.Fprintf(os.Stderr, "  -frames: Number of frames in the animation (default: 6)\n")
@@ -120,7 +149,7 @@ func loadImage(filename string) (image.Image, error) {
 	return img, nil
 }
 
-func generateFrames(img image.Image, direction float64, frameCount int) ([]*image.Paletted, error) {
+func generateRotateFrames(img image.Image, direction float64, frameCount int) ([]*image.Paletted, error) {
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
@@ -156,6 +185,201 @@ func generateFrames(img image.Image, direction float64, frameCount int) ([]*imag
 	}
 
 	return frames, nil
+}
+
+func generateHueFrames(img image.Image, frameCount int) ([]*image.Paletted, error) {
+	bounds := img.Bounds()
+
+	// Create palette from source image
+	palette := createPalette(img)
+
+	frames := make([]*image.Paletted, frameCount)
+	// Cycle through full hue range (0-360 degrees) over all frames
+	hueStep := 360.0 / float64(frameCount)
+
+	for i := 0; i < frameCount; i++ {
+		hueShift := float64(i) * hueStep
+
+		// Create new image for this frame
+		frame := image.NewRGBA(bounds)
+
+		// Apply hue shift to the image
+		applyHueShift(frame, img, hueShift)
+
+		// Convert to paletted image for GIF
+		paletted := image.NewPaletted(frame.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), frame, frame.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
+	}
+
+	return frames, nil
+}
+
+func applyHueShift(dst *image.RGBA, src image.Image, hueShift float64) {
+	bounds := src.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := src.At(x, y).RGBA()
+			// Convert from 16-bit to 8-bit
+			r8 := uint8(r >> 8)
+			g8 := uint8(g >> 8)
+			b8 := uint8(b >> 8)
+			a8 := uint8(a >> 8)
+
+			// Convert RGB to HSV
+			h, s, v := rgbToHSV(r8, g8, b8)
+
+			// Shift hue
+			h = math.Mod(h+hueShift, 360.0)
+			if h < 0 {
+				h += 360.0
+			}
+
+			// Convert back to RGB
+			rNew, gNew, bNew := hsvToRGB(h, s, v)
+
+			dst.Set(x, y, color.RGBA{rNew, gNew, bNew, a8})
+		}
+	}
+}
+
+func rgbToHSV(r, g, b uint8) (h, s, v float64) {
+	rf := float64(r) / 255.0
+	gf := float64(g) / 255.0
+	bf := float64(b) / 255.0
+
+	max := math.Max(math.Max(rf, gf), bf)
+	min := math.Min(math.Min(rf, gf), bf)
+	delta := max - min
+
+	// Value
+	v = max
+
+	// Saturation
+	if max == 0 {
+		s = 0
+	} else {
+		s = delta / max
+	}
+
+	// Hue
+	if delta == 0 {
+		h = 0
+	} else if max == rf {
+		h = 60.0 * math.Mod((gf-bf)/delta+6.0, 6.0)
+	} else if max == gf {
+		h = 60.0 * ((bf-rf)/delta + 2.0)
+	} else {
+		h = 60.0 * ((rf-gf)/delta + 4.0)
+	}
+
+	if h < 0 {
+		h += 360.0
+	}
+
+	return h, s, v
+}
+
+func hsvToRGB(h, s, v float64) (r, g, b uint8) {
+	c := v * s
+	x := c * (1.0 - math.Abs(math.Mod(h/60.0, 2.0)-1.0))
+	m := v - c
+
+	var rf, gf, bf float64
+
+	switch {
+	case h < 60:
+		rf, gf, bf = c, x, 0
+	case h < 120:
+		rf, gf, bf = x, c, 0
+	case h < 180:
+		rf, gf, bf = 0, c, x
+	case h < 240:
+		rf, gf, bf = 0, x, c
+	case h < 300:
+		rf, gf, bf = x, 0, c
+	default:
+		rf, gf, bf = c, 0, x
+	}
+
+	r = uint8(math.Round((rf + m) * 255.0))
+	g = uint8(math.Round((gf + m) * 255.0))
+	b = uint8(math.Round((bf + m) * 255.0))
+
+	return r, g, b
+}
+
+func generateZoomFrames(img image.Image, frameCount int) ([]*image.Paletted, error) {
+	bounds := img.Bounds()
+
+	// Create palette from source image
+	palette := createPalette(img)
+
+	frames := make([]*image.Paletted, frameCount)
+	// Zoom from 1x to 6x over all frames
+	minZoom := 1.0
+	maxZoom := 6.0
+
+	for i := 0; i < frameCount; i++ {
+		// Interpolate zoom level from 1x to 6x
+		progress := float64(i) / float64(frameCount-1)
+		if frameCount == 1 {
+			progress = 0
+		}
+		zoom := minZoom + (maxZoom-minZoom)*progress
+
+		// Create new image for this frame
+		frame := image.NewRGBA(bounds)
+
+		// Apply zoom to the image
+		applyZoom(frame, img, zoom)
+
+		// Convert to paletted image for GIF
+		paletted := image.NewPaletted(frame.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), frame, frame.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
+	}
+
+	return frames, nil
+}
+
+func applyZoom(dst *image.RGBA, src image.Image, zoom float64) {
+	dstBounds := dst.Bounds()
+	dstWidth := float64(dstBounds.Dx())
+	dstHeight := float64(dstBounds.Dy())
+
+	srcBounds := src.Bounds()
+	srcWidth := float64(srcBounds.Dx())
+	srcHeight := float64(srcBounds.Dy())
+
+	// Calculate the source region to sample from (centered)
+	srcRegionWidth := srcWidth / zoom
+	srcRegionHeight := srcHeight / zoom
+	srcCenterX := srcWidth / 2.0
+	srcCenterY := srcHeight / 2.0
+
+	srcMinX := srcCenterX - srcRegionWidth/2.0
+	srcMinY := srcCenterY - srcRegionHeight/2.0
+
+	// For each pixel in destination, find corresponding pixel in source
+	for y := 0; y < dstBounds.Dy(); y++ {
+		for x := 0; x < dstBounds.Dx(); x++ {
+			// Map destination pixel to source coordinates
+			srcX := srcMinX + (float64(x)/dstWidth)*srcRegionWidth
+			srcY := srcMinY + (float64(y)/dstHeight)*srcRegionHeight
+
+			// Get pixel from source using nearest neighbor
+			srcXInt := int(srcX) + srcBounds.Min.X
+			srcYInt := int(srcY) + srcBounds.Min.Y
+
+			if srcXInt >= srcBounds.Min.X && srcXInt < srcBounds.Max.X &&
+				srcYInt >= srcBounds.Min.Y && srcYInt < srcBounds.Max.Y {
+				dst.Set(x+dstBounds.Min.X, y+dstBounds.Min.Y, src.At(srcXInt, srcYInt))
+			}
+		}
+	}
 }
 
 func createPalette(img image.Image) color.Palette {
@@ -205,8 +429,8 @@ func drawRotatedImage(dst *image.RGBA, src image.Image, cx, cy, angle float64) {
 	srcHeight := float64(srcBounds.Dy())
 
 	// For each pixel in destination, find corresponding pixel in source
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			// Translate to center
 			dx := float64(x) - cx
 			dy := float64(y) - cy
