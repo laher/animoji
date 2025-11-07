@@ -23,7 +23,7 @@ func main() {
 	var animType string
 
 	switch subcommand {
-	case "clockwise", "anticlockwise":
+	case "360":
 		animType = "rotate"
 	case "hue":
 		animType = "hue"
@@ -42,6 +42,7 @@ func main() {
 	outFile := fs.String("out", "", "Output GIF file")
 	frameCount := fs.Int("frames", 6, "Number of frames in the animation")
 	rate := fs.Int("rate", 3, "Frame rate in frames per second")
+	reverse := fs.Bool("reverse", false, "Reverse the order of frames")
 
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
@@ -74,14 +75,8 @@ func main() {
 	var frames []*image.Paletted
 	switch animType {
 	case "rotate":
-		var direction float64
-		if subcommand == "clockwise" {
-			direction = 1.0
-		} else {
-			direction = -1.0
-		}
 		var err error
-		frames, err = generateRotateFrames(img, direction, *frameCount)
+		frames, err = generateRotateFrames(img, 1.0, *frameCount)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
 			os.Exit(1)
@@ -109,6 +104,13 @@ func main() {
 		}
 	}
 
+	// Reverse frames if requested
+	if *reverse {
+		for i, j := 0, len(frames)-1; i < j; i, j = i+1, j-1 {
+			frames[i], frames[j] = frames[j], frames[i]
+		}
+	}
+
 	// Create animated GIF
 	anim := &gif.GIF{
 		Image: frames,
@@ -132,9 +134,8 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: animoji <clockwise|anticlockwise|hue|zoom|pixelate> -in <input> -out <output> [flags]\n")
-	fmt.Fprintf(os.Stderr, "  clockwise: Rotate image clockwise\n")
-	fmt.Fprintf(os.Stderr, "  anticlockwise: Rotate image anticlockwise\n")
+	fmt.Fprintf(os.Stderr, "Usage: animoji <360|hue|zoom|pixelate> -in <input> -out <output> [flags]\n")
+	fmt.Fprintf(os.Stderr, "  360: Rotate image 360 degrees clockwise\n")
 	fmt.Fprintf(os.Stderr, "  hue: Cycle through hue range\n")
 	fmt.Fprintf(os.Stderr, "  zoom: Zoom image in (up to 6x)\n")
 	fmt.Fprintf(os.Stderr, "  pixelate: Gradually pixelate image to 4x4 grid\n")
@@ -142,6 +143,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  -out: Output GIF file\n")
 	fmt.Fprintf(os.Stderr, "  -frames: Number of frames in the animation (default: 6)\n")
 	fmt.Fprintf(os.Stderr, "  -rate: Frame rate in frames per second (default: 3)\n")
+	fmt.Fprintf(os.Stderr, "  -reverse: Reverse the order of frames (optional)\n")
 }
 
 func loadImage(filename string) (image.Image, error) {
