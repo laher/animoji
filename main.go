@@ -29,6 +29,8 @@ func main() {
 		animType = "hue"
 	case "zoom":
 		animType = "zoom"
+	case "pixelate":
+		animType = "pixelate"
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n", subcommand)
 		printUsage()
@@ -98,6 +100,13 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
 			os.Exit(1)
 		}
+	case "pixelate":
+		var err error
+		frames, err = generatePixelateFrames(img, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Create animated GIF
@@ -123,11 +132,12 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: animoji <clockwise|anticlockwise|hue|zoom> -in <input> -out <output> [flags]\n")
+	fmt.Fprintf(os.Stderr, "Usage: animoji <clockwise|anticlockwise|hue|zoom|pixelate> -in <input> -out <output> [flags]\n")
 	fmt.Fprintf(os.Stderr, "  clockwise: Rotate image clockwise\n")
 	fmt.Fprintf(os.Stderr, "  anticlockwise: Rotate image anticlockwise\n")
 	fmt.Fprintf(os.Stderr, "  hue: Cycle through hue range\n")
 	fmt.Fprintf(os.Stderr, "  zoom: Zoom image in (up to 6x)\n")
+	fmt.Fprintf(os.Stderr, "  pixelate: Gradually pixelate image to 4x4 grid\n")
 	fmt.Fprintf(os.Stderr, "  -in: Input image file (PNG or JPEG)\n")
 	fmt.Fprintf(os.Stderr, "  -out: Output GIF file\n")
 	fmt.Fprintf(os.Stderr, "  -frames: Number of frames in the animation (default: 6)\n")
@@ -377,6 +387,118 @@ func applyZoom(dst *image.RGBA, src image.Image, zoom float64) {
 			if srcXInt >= srcBounds.Min.X && srcXInt < srcBounds.Max.X &&
 				srcYInt >= srcBounds.Min.Y && srcYInt < srcBounds.Max.Y {
 				dst.Set(x+dstBounds.Min.X, y+dstBounds.Min.Y, src.At(srcXInt, srcYInt))
+			}
+		}
+	}
+}
+
+func generatePixelateFrames(img image.Image, frameCount int) ([]*image.Paletted, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Create palette from source image
+	palette := createPalette(img)
+
+	frames := make([]*image.Paletted, frameCount)
+	// Pixelate from original image (block size = 1) to 4x4 grid
+	// Block size goes from 1 pixel to ensure at least 4 blocks in each dimension
+	minBlockSize := 1.0
+	// For 4x4 grid, we need block size that gives us at least 4 blocks
+	// Use the smaller dimension to ensure we get at least 4 blocks in both directions
+	maxBlockSizeX := float64(width) / 4.0
+	maxBlockSizeY := float64(height) / 4.0
+	maxBlockSize := math.Min(maxBlockSizeX, maxBlockSizeY)
+
+	for i := 0; i < frameCount; i++ {
+		// Interpolate block size from 1 to maxBlockSize
+		progress := float64(i) / float64(frameCount-1)
+		if frameCount == 1 {
+			progress = 0
+		}
+		blockSize := minBlockSize + (maxBlockSize-minBlockSize)*progress
+
+		// Create new image for this frame
+		frame := image.NewRGBA(bounds)
+
+		// Apply pixelation to the image
+		// If blockSize is 1.0, just copy the original (no pixelation)
+		if blockSize <= 1.0 {
+			draw.Draw(frame, frame.Bounds(), img, bounds.Min, draw.Src)
+		} else {
+			applyPixelate(frame, img, blockSize)
+		}
+
+		// Convert to paletted image for GIF
+		paletted := image.NewPaletted(frame.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), frame, frame.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
+	}
+
+	return frames, nil
+}
+
+func applyPixelate(dst *image.RGBA, src image.Image, blockSize float64) {
+	bounds := src.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Calculate number of blocks based on block size
+	blocksX := int(math.Ceil(float64(width) / blockSize))
+	blocksY := int(math.Ceil(float64(height) / blockSize))
+
+	// Process each block
+	for blockY := 0; blockY < blocksY; blockY++ {
+		for blockX := 0; blockX < blocksX; blockX++ {
+			// Calculate block boundaries
+			startX := int(float64(blockX) * blockSize)
+			startY := int(float64(blockY) * blockSize)
+			endX := int(float64(blockX+1) * blockSize)
+			endY := int(float64(blockY+1) * blockSize)
+
+			// Clamp to bounds
+			if startX < bounds.Min.X {
+				startX = bounds.Min.X
+			}
+			if startY < bounds.Min.Y {
+				startY = bounds.Min.Y
+			}
+			if endX > bounds.Max.X {
+				endX = bounds.Max.X
+			}
+			if endY > bounds.Max.Y {
+				endY = bounds.Max.Y
+			}
+
+			// Calculate average color of this block
+			var rSum, gSum, bSum, aSum uint64
+			pixelCount := 0
+
+			for y := startY; y < endY; y++ {
+				for x := startX; x < endX; x++ {
+					r, g, b, a := src.At(x, y).RGBA()
+					rSum += uint64(r >> 8)
+					gSum += uint64(g >> 8)
+					bSum += uint64(b >> 8)
+					aSum += uint64(a >> 8)
+					pixelCount++
+				}
+			}
+
+			if pixelCount > 0 {
+				avgR := uint8(rSum / uint64(pixelCount))
+				avgG := uint8(gSum / uint64(pixelCount))
+				avgB := uint8(bSum / uint64(pixelCount))
+				avgA := uint8(aSum / uint64(pixelCount))
+
+				// Fill the entire block with the average color
+				blockColor := color.RGBA{avgR, avgG, avgB, avgA}
+				for y := startY; y < endY; y++ {
+					for x := startX; x < endX; x++ {
+						dst.Set(x, y, blockColor)
+					}
+				}
 			}
 		}
 	}
