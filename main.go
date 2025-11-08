@@ -15,12 +15,24 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	inFile := flag.String("in", "", "Input image file (PNG or JPEG)")
+	outFile := flag.String("out", "", "Output GIF file")
+	frameCount := flag.Int("frames", 6, "Number of frames in the animation")
+	rate := flag.Int("rate", 3, "Frame rate in frames per second")
+	reverse := flag.Bool("reverse", false, "Reverse the order of frames")
+	resize := flag.Int("resize", 0, "Resize image to specified width (height scaled proportionally, 0 = no resize)")
+
+	flag.Parse()
+
+	// Get subcommand from remaining arguments
+	args := flag.Args()
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "Error: subcommand is required\n")
 		printUsage()
 		os.Exit(1)
 	}
 
-	subcommand := os.Args[1]
+	subcommand := args[0]
 	var animType string
 
 	switch subcommand {
@@ -34,22 +46,15 @@ func main() {
 		animType = "pixelate"
 	case "tint-rgb":
 		animType = "tint-rgb"
+	case "vibes":
+		animType = "vibes"
+	case "kaleidoscope":
+		animType = "kaleidoscope"
+	case "ripple":
+		animType = "ripple"
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n", subcommand)
 		printUsage()
-		os.Exit(1)
-	}
-
-	fs := flag.NewFlagSet(subcommand, flag.ExitOnError)
-	inFile := fs.String("in", "", "Input image file (PNG or JPEG)")
-	outFile := fs.String("out", "", "Output GIF file")
-	frameCount := fs.Int("frames", 6, "Number of frames in the animation")
-	rate := fs.Int("rate", 3, "Frame rate in frames per second")
-	reverse := fs.Bool("reverse", false, "Reverse the order of frames")
-	resize := fs.Int("resize", 0, "Resize image to specified width (height scaled proportionally, 0 = no resize)")
-
-	if err := fs.Parse(os.Args[2:]); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -128,6 +133,27 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
 			os.Exit(1)
 		}
+	case "vibes":
+		var err error
+		frames, err = generateVibesFrames(img, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
+	case "kaleidoscope":
+		var err error
+		frames, err = generateKaleidoscopeFrames(img, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
+	case "ripple":
+		var err error
+		frames, err = generateRippleFrames(img, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Reverse frames if requested
@@ -166,18 +192,25 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: animoji <360|hue|zoom|pixelate|tint-rgb> -in <input> -out <output> [flags]\n")
-	fmt.Fprintf(os.Stderr, "  360: Rotate image 360 degrees clockwise\n")
-	fmt.Fprintf(os.Stderr, "  hue: Cycle through hue range\n")
-	fmt.Fprintf(os.Stderr, "  zoom: Zoom image in (up to 6x)\n")
-	fmt.Fprintf(os.Stderr, "  pixelate: Gradually pixelate image to 4x4 grid\n")
-	fmt.Fprintf(os.Stderr, "  tint-rgb: Apply RGB tint layer with 50%% opacity, cycling through colors\n")
+	fmt.Fprintf(os.Stderr, "Usage: animoji [flags] <subcommand>\n")
+	fmt.Fprintf(os.Stderr, "\nFlags:\n")
 	fmt.Fprintf(os.Stderr, "  -in: Input image file (PNG or JPEG, optional, defaults to stdin)\n")
 	fmt.Fprintf(os.Stderr, "  -out: Output GIF file (optional, defaults to stdout)\n")
 	fmt.Fprintf(os.Stderr, "  -frames: Number of frames in the animation (default: 6)\n")
 	fmt.Fprintf(os.Stderr, "  -rate: Frame rate in frames per second (default: 3)\n")
 	fmt.Fprintf(os.Stderr, "  -reverse: Reverse the order of frames (optional)\n")
 	fmt.Fprintf(os.Stderr, "  -resize: Resize image to specified width, height scaled proportionally (0 = no resize)\n")
+	fmt.Fprintf(os.Stderr, "\nSubcommands:\n")
+	fmt.Fprintf(os.Stderr, "  360: Rotate image 360 degrees clockwise\n")
+	fmt.Fprintf(os.Stderr, "  hue: Cycle through hue range\n")
+	fmt.Fprintf(os.Stderr, "  zoom: Zoom image in (up to 6x)\n")
+	fmt.Fprintf(os.Stderr, "  pixelate: Gradually pixelate image to 4x4 grid\n")
+	fmt.Fprintf(os.Stderr, "  tint-rgb: Apply RGB tint layer with 50%% opacity, cycling through colors\n")
+	fmt.Fprintf(os.Stderr, "  vibes: Apply rotating color tints to image quarters (violet, yellow, green, blue)\n")
+	fmt.Fprintf(os.Stderr, "  kaleidoscope: Create kaleidoscope effect with rotating mirrored sections\n")
+	fmt.Fprintf(os.Stderr, "  ripple: Apply ripple wave distortion emanating from center\n")
+	fmt.Fprintf(os.Stderr, "\nExample:\n")
+	fmt.Fprintf(os.Stderr, "  animoji -in image.png -out output.gif -frames 12 -rate 6 360\n")
 }
 
 func loadImage(filename string) (image.Image, error) {
@@ -639,6 +672,248 @@ func applyTint(dst *image.RGBA, src image.Image, hue float64) {
 			blendB := uint8(float64(srcB8)*(1.0-opacity) + float64(b)*opacity)
 
 			dst.Set(x, y, color.RGBA{blendR, blendG, blendB, srcA8})
+		}
+	}
+}
+
+func generateVibesFrames(img image.Image, frameCount int) ([]*image.Paletted, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Create palette from source image
+	palette := createPalette(img)
+
+	// Define the four colors: violet, yellow, green, blue
+	// Using vibrant highlighter pen colors
+	colors := []color.RGBA{
+		{255, 20, 147, 255}, // Hot Pink/Magenta (vibrant violet/pink highlighter)
+		{255, 255, 0, 255},  // Bright Yellow (classic yellow highlighter)
+		{50, 255, 50, 255},  // Bright Lime Green (vibrant green highlighter)
+		{0, 200, 255, 255},  // Bright Cyan Blue (vibrant blue highlighter)
+	}
+
+	frames := make([]*image.Paletted, frameCount)
+
+	for i := 0; i < frameCount; i++ {
+		// Create new image for this frame
+		frame := image.NewRGBA(bounds)
+
+		// Calculate which color each quarter should have
+		// Each frame, rotate the colors: quarter 0 gets color (i+0)%4, quarter 1 gets (i+1)%4, etc.
+		for quarter := 0; quarter < 4; quarter++ {
+			colorIndex := (i + quarter) % 4
+			tintColor := colors[colorIndex]
+
+			// Calculate quarter boundaries
+			var startX, endX, startY, endY int
+			switch quarter {
+			case 0: // Top-left
+				startX = bounds.Min.X
+				endX = bounds.Min.X + width/2
+				startY = bounds.Min.Y
+				endY = bounds.Min.Y + height/2
+			case 1: // Top-right
+				startX = bounds.Min.X + width/2
+				endX = bounds.Max.X
+				startY = bounds.Min.Y
+				endY = bounds.Min.Y + height/2
+			case 2: // Bottom-left
+				startX = bounds.Min.X
+				endX = bounds.Min.X + width/2
+				startY = bounds.Min.Y + height/2
+				endY = bounds.Max.Y
+			case 3: // Bottom-right
+				startX = bounds.Min.X + width/2
+				endX = bounds.Max.X
+				startY = bounds.Min.Y + height/2
+				endY = bounds.Max.Y
+			}
+
+			// Apply tint to this quarter
+			applyTintToRegion(frame, img, tintColor, startX, endX, startY, endY)
+		}
+
+		// Convert to paletted image for GIF
+		paletted := image.NewPaletted(frame.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), frame, frame.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
+	}
+
+	return frames, nil
+}
+
+func applyTintToRegion(dst *image.RGBA, src image.Image, tintColor color.RGBA, startX, endX, startY, endY int) {
+	opacity := 0.5 // 50% opacity
+	tintR := float64(tintColor.R)
+	tintG := float64(tintColor.G)
+	tintB := float64(tintColor.B)
+
+	for y := startY; y < endY; y++ {
+		for x := startX; x < endX; x++ {
+			// Get source pixel
+			srcR, srcG, srcB, srcA := src.At(x, y).RGBA()
+			srcR8 := uint8(srcR >> 8)
+			srcG8 := uint8(srcG >> 8)
+			srcB8 := uint8(srcB >> 8)
+			srcA8 := uint8(srcA >> 8)
+
+			// Blend tint color with source pixel at 50% opacity
+			blendR := uint8(float64(srcR8)*(1.0-opacity) + tintR*opacity)
+			blendG := uint8(float64(srcG8)*(1.0-opacity) + tintG*opacity)
+			blendB := uint8(float64(srcB8)*(1.0-opacity) + tintB*opacity)
+
+			dst.Set(x, y, color.RGBA{blendR, blendG, blendB, srcA8})
+		}
+	}
+}
+
+func generateKaleidoscopeFrames(img image.Image, frameCount int) ([]*image.Paletted, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Create palette from source image
+	palette := createPalette(img)
+
+	frames := make([]*image.Paletted, frameCount)
+	centerX := float64(width) / 2.0
+	centerY := float64(height) / 2.0
+
+	for i := 0; i < frameCount; i++ {
+		// Rotate the kaleidoscope pattern
+		rotationAngle := float64(i) * 2.0 * math.Pi / float64(frameCount)
+
+		// Create new image for this frame
+		frame := image.NewRGBA(bounds)
+
+		// Apply kaleidoscope effect
+		applyKaleidoscope(frame, img, centerX, centerY, rotationAngle)
+
+		// Convert to paletted image for GIF
+		paletted := image.NewPaletted(frame.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), frame, frame.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
+	}
+
+	return frames, nil
+}
+
+func applyKaleidoscope(dst *image.RGBA, src image.Image, cx, cy, rotationAngle float64) {
+	bounds := dst.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Number of segments (like a kaleidoscope mirror)
+	segments := 8
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			// Translate to center
+			dx := float64(x) - cx
+			dy := float64(y) - cy
+
+			// Calculate angle and distance from center
+			angle := math.Atan2(dy, dx) + rotationAngle
+			distance := math.Sqrt(dx*dx + dy*dy)
+
+			// Map to one segment (0 to 2*pi/segments)
+			segmentAngle := math.Mod(angle, 2.0*math.Pi/float64(segments))
+			if segmentAngle < 0 {
+				segmentAngle += 2.0 * math.Pi / float64(segments)
+			}
+
+			// Mirror within the segment
+			if segmentAngle > math.Pi/float64(segments) {
+				segmentAngle = 2.0*math.Pi/float64(segments) - segmentAngle
+			}
+
+			// Calculate source coordinates
+			srcAngle := segmentAngle - rotationAngle
+			srcX := int(cx + distance*math.Cos(srcAngle))
+			srcY := int(cy + distance*math.Sin(srcAngle))
+
+			// Clamp to source bounds
+			if srcX >= bounds.Min.X && srcX < bounds.Max.X &&
+				srcY >= bounds.Min.Y && srcY < bounds.Max.Y {
+				dst.Set(x, y, src.At(srcX, srcY))
+			}
+		}
+	}
+}
+
+func generateRippleFrames(img image.Image, frameCount int) ([]*image.Paletted, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Create palette from source image
+	palette := createPalette(img)
+
+	frames := make([]*image.Paletted, frameCount)
+	centerX := float64(width) / 2.0
+	centerY := float64(height) / 2.0
+	maxDistance := math.Sqrt(centerX*centerX + centerY*centerY)
+
+	for i := 0; i < frameCount; i++ {
+		// Ripple phase (0 to 2*pi)
+		phase := float64(i) * 2.0 * math.Pi / float64(frameCount)
+
+		// Create new image for this frame
+		frame := image.NewRGBA(bounds)
+
+		// Apply ripple effect
+		applyRipple(frame, img, centerX, centerY, phase, maxDistance)
+
+		// Convert to paletted image for GIF
+		paletted := image.NewPaletted(frame.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), frame, frame.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
+	}
+
+	return frames, nil
+}
+
+func applyRipple(dst *image.RGBA, src image.Image, cx, cy, phase, maxDistance float64) {
+	bounds := dst.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Ripple parameters
+	amplitude := 5.0  // Maximum pixel displacement
+	frequency := 0.1  // Ripple frequency
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			// Calculate distance from center
+			dx := float64(x) - cx
+			dy := float64(y) - cy
+			distance := math.Sqrt(dx*dx + dy*dy)
+
+			// Calculate ripple displacement
+			ripple := amplitude * math.Sin(distance*frequency-phase)
+
+			// Calculate angle
+			angle := math.Atan2(dy, dx)
+
+			// Apply displacement along the radial direction
+			displacedDistance := distance + ripple
+			srcX := int(cx + displacedDistance*math.Cos(angle))
+			srcY := int(cy + displacedDistance*math.Sin(angle))
+
+			// Clamp to source bounds
+			if srcX >= bounds.Min.X && srcX < bounds.Max.X &&
+				srcY >= bounds.Min.Y && srcY < bounds.Max.Y {
+				dst.Set(x, y, src.At(srcX, srcY))
+			} else {
+				// If out of bounds, use nearest edge pixel
+				srcX = int(math.Max(float64(bounds.Min.X), math.Min(float64(bounds.Max.X-1), float64(srcX))))
+				srcY = int(math.Max(float64(bounds.Min.Y), math.Min(float64(bounds.Max.Y-1), float64(srcY))))
+				dst.Set(x, y, src.At(srcX, srcY))
+			}
 		}
 	}
 }
