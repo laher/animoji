@@ -58,11 +58,12 @@ animoji pixelate -in image.png -out pixelate-animation.gif -frames 12 -rate 6
 
 ## Flags
 
-- `-in`: Input image file (PNG or JPEG)
-- `-out`: Output GIF file path
+- `-in`: Input image file (PNG or JPEG, optional, defaults to stdin)
+- `-out`: Output GIF file path (optional, defaults to stdout)
 - `-frames`: Number of frames in the animation (default: 6)
 - `-rate`: Frame rate in frames per second (default: 3)
 - `-reverse`: Reverse the order of frames (optional)
+- `-resize`: Resize image to specified width before processing, height scaled proportionally (0 = no resize, optional)
 
 ## Examples
 
@@ -81,6 +82,15 @@ animoji pixelate -in image.png -out pixelate.gif -frames 8 -rate 4
 
 # Zoom animation in reverse (zooms out instead of in)
 animoji zoom -in image.png -out zoom-out.gif -frames 12 -rate 6 -reverse
+
+# Resize image to 16 pixels wide before rotating
+animoji 360 -in large.png -out small-rotate.gif -resize 16
+
+# Read from stdin and write to stdout
+cat image.png | animoji 360 -frames 12 -rate 6 > output.gif
+
+# Read from file and write to stdout
+animoji 360 -in image.png -frames 12 -rate 6 > output.gif
 ```
 
 ## Animation Details

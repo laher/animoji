@@ -9,6 +9,7 @@ import (
 	"image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"math"
 	"os"
 )
@@ -43,14 +44,10 @@ func main() {
 	frameCount := fs.Int("frames", 6, "Number of frames in the animation")
 	rate := fs.Int("rate", 3, "Frame rate in frames per second")
 	reverse := fs.Bool("reverse", false, "Reverse the order of frames")
+	resize := fs.Int("resize", 0, "Resize image to specified width (height scaled proportionally, 0 = no resize)")
 
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
-		os.Exit(1)
-	}
-
-	if *inFile == "" || *outFile == "" {
-		fmt.Fprintf(os.Stderr, "Both -in and -out flags are required\n")
 		os.Exit(1)
 	}
 
@@ -64,11 +61,31 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *resize < 0 {
+		fmt.Fprintf(os.Stderr, "Resize width must be non-negative\n")
+		os.Exit(1)
+	}
+
 	// Load input image
-	img, err := loadImage(*inFile)
+	var img image.Image
+	var err error
+	if *inFile == "" {
+		img, err = loadImageFromReader(os.Stdin)
+	} else {
+		img, err = loadImage(*inFile)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading image: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Resize image if requested
+	if *resize > 0 {
+		img, err = resizeImage(img, *resize)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resizing image: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Generate frames
@@ -124,13 +141,19 @@ func main() {
 		anim.Delay[i] = delayPerFrame
 	}
 
-	// Write GIF to file
-	if err := writeGIF(*outFile, anim); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing GIF: %v\n", err)
-		os.Exit(1)
+	// Write GIF to file or stdout
+	if *outFile == "" {
+		if err := writeGIFToWriter(os.Stdout, anim); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing GIF: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := writeGIF(*outFile, anim); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing GIF: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Successfully created animated GIF: %s\n", *outFile)
 	}
-
-	fmt.Printf("Successfully created animated GIF: %s\n", *outFile)
 }
 
 func printUsage() {
@@ -139,11 +162,12 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  hue: Cycle through hue range\n")
 	fmt.Fprintf(os.Stderr, "  zoom: Zoom image in (up to 6x)\n")
 	fmt.Fprintf(os.Stderr, "  pixelate: Gradually pixelate image to 4x4 grid\n")
-	fmt.Fprintf(os.Stderr, "  -in: Input image file (PNG or JPEG)\n")
-	fmt.Fprintf(os.Stderr, "  -out: Output GIF file\n")
+	fmt.Fprintf(os.Stderr, "  -in: Input image file (PNG or JPEG, optional, defaults to stdin)\n")
+	fmt.Fprintf(os.Stderr, "  -out: Output GIF file (optional, defaults to stdout)\n")
 	fmt.Fprintf(os.Stderr, "  -frames: Number of frames in the animation (default: 6)\n")
 	fmt.Fprintf(os.Stderr, "  -rate: Frame rate in frames per second (default: 3)\n")
 	fmt.Fprintf(os.Stderr, "  -reverse: Reverse the order of frames (optional)\n")
+	fmt.Fprintf(os.Stderr, "  -resize: Resize image to specified width, height scaled proportionally (0 = no resize)\n")
 }
 
 func loadImage(filename string) (image.Image, error) {
@@ -153,12 +177,58 @@ func loadImage(filename string) (image.Image, error) {
 	}
 	defer file.Close()
 
-	img, _, err := image.Decode(file)
+	return loadImageFromReader(file)
+}
+
+func loadImageFromReader(r io.Reader) (image.Image, error) {
+	img, _, err := image.Decode(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
 
 	return img, nil
+}
+
+func resizeImage(img image.Image, targetWidth int) (image.Image, error) {
+	bounds := img.Bounds()
+	srcWidth := bounds.Dx()
+	srcHeight := bounds.Dy()
+
+	if srcWidth == 0 || srcHeight == 0 {
+		return nil, fmt.Errorf("source image has zero dimensions")
+	}
+
+	// Calculate target height maintaining aspect ratio
+	targetHeight := int(float64(targetWidth) * float64(srcHeight) / float64(srcWidth))
+
+	// Create new RGBA image with target dimensions
+	dst := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
+
+	// Scale factors
+	scaleX := float64(srcWidth) / float64(targetWidth)
+	scaleY := float64(srcHeight) / float64(targetHeight)
+
+	// Resize using nearest neighbor sampling
+	for y := 0; y < targetHeight; y++ {
+		for x := 0; x < targetWidth; x++ {
+			// Map destination pixel to source coordinates
+			srcX := int(float64(x) * scaleX)
+			srcY := int(float64(y) * scaleY)
+
+			// Clamp to source bounds
+			if srcX >= srcWidth {
+				srcX = srcWidth - 1
+			}
+			if srcY >= srcHeight {
+				srcY = srcHeight - 1
+			}
+
+			// Get pixel from source
+			dst.Set(x, y, img.At(srcX+bounds.Min.X, srcY+bounds.Min.Y))
+		}
+	}
+
+	return dst, nil
 }
 
 func generateRotateFrames(img image.Image, direction float64, frameCount int) ([]*image.Paletted, error) {
@@ -584,5 +654,9 @@ func writeGIF(filename string, anim *gif.GIF) error {
 	}
 	defer file.Close()
 
-	return gif.EncodeAll(file, anim)
+	return writeGIFToWriter(file, anim)
+}
+
+func writeGIFToWriter(w io.Writer, anim *gif.GIF) error {
+	return gif.EncodeAll(w, anim)
 }
