@@ -56,6 +56,16 @@ Gradually pixelates the image, starting from the original image and ending with 
 animoji pixelate -in image.png -out pixelate-animation.gif -frames 12 -rate 6
 ```
 
+### `tint-rgb`
+Applies a tint layer with 50% opacity that cycles through RGB colors (red, yellow, green, cyan, blue, magenta) and colors in between.
+
+**Requirements:** Works with any image size.
+
+**Example:**
+```bash
+animoji tint-rgb -in image.png -out tint-animation.gif -frames 12 -rate 6
+```
+
 ## Flags
 
 - `-in`: Input image file (PNG or JPEG, optional, defaults to stdin)
@@ -91,6 +101,9 @@ cat image.png | animoji 360 -frames 12 -rate 6 > output.gif
 
 # Read from file and write to stdout
 animoji 360 -in image.png -frames 12 -rate 6 > output.gif
+
+# Apply RGB tint animation
+animoji tint-rgb -in image.png -out tint.gif -frames 12 -rate 6
 ```
 
 ## Animation Details
@@ -99,6 +112,7 @@ animoji 360 -in image.png -frames 12 -rate 6 > output.gif
 - **Hue animation**: Cycles through full hue range (0-360 degrees) over all frames
 - **Zoom animation**: Zooms from 1x to 6x over all frames
 - **Pixelate animation**: Progressively pixelates from original image to 4x4 grid
+- **Tint-RGB animation**: Cycles through RGB colors (red, yellow, green, cyan, blue, magenta) with 50% opacity tint layer
 
 The total duration of the animation is calculated as: `frames / rate` seconds.
 

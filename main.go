@@ -32,6 +32,8 @@ func main() {
 		animType = "zoom"
 	case "pixelate":
 		animType = "pixelate"
+	case "tint-rgb":
+		animType = "tint-rgb"
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n", subcommand)
 		printUsage()
@@ -119,6 +121,13 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
 			os.Exit(1)
 		}
+	case "tint-rgb":
+		var err error
+		frames, err = generateTintRGBFrames(img, *frameCount)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Reverse frames if requested
@@ -157,11 +166,12 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: animoji <360|hue|zoom|pixelate> -in <input> -out <output> [flags]\n")
+	fmt.Fprintf(os.Stderr, "Usage: animoji <360|hue|zoom|pixelate|tint-rgb> -in <input> -out <output> [flags]\n")
 	fmt.Fprintf(os.Stderr, "  360: Rotate image 360 degrees clockwise\n")
 	fmt.Fprintf(os.Stderr, "  hue: Cycle through hue range\n")
 	fmt.Fprintf(os.Stderr, "  zoom: Zoom image in (up to 6x)\n")
 	fmt.Fprintf(os.Stderr, "  pixelate: Gradually pixelate image to 4x4 grid\n")
+	fmt.Fprintf(os.Stderr, "  tint-rgb: Apply RGB tint layer with 50%% opacity, cycling through colors\n")
 	fmt.Fprintf(os.Stderr, "  -in: Input image file (PNG or JPEG, optional, defaults to stdin)\n")
 	fmt.Fprintf(os.Stderr, "  -out: Output GIF file (optional, defaults to stdout)\n")
 	fmt.Fprintf(os.Stderr, "  -frames: Number of frames in the animation (default: 6)\n")
@@ -572,6 +582,63 @@ func applyPixelate(dst *image.RGBA, src image.Image, blockSize float64) {
 					}
 				}
 			}
+		}
+	}
+}
+
+func generateTintRGBFrames(img image.Image, frameCount int) ([]*image.Paletted, error) {
+	bounds := img.Bounds()
+
+	// Create palette from source image
+	palette := createPalette(img)
+
+	frames := make([]*image.Paletted, frameCount)
+	// Cycle through RGB colors: Red -> Yellow -> Green -> Cyan -> Blue -> Magenta -> Red
+	// This is essentially cycling through hue 0-360 degrees
+
+	for i := 0; i < frameCount; i++ {
+		// Calculate hue for this frame (0-360 degrees)
+		hue := float64(i) * 360.0 / float64(frameCount)
+
+		// Create new image for this frame
+		frame := image.NewRGBA(bounds)
+
+		// Apply tint to the image
+		applyTint(frame, img, hue)
+
+		// Convert to paletted image for GIF
+		paletted := image.NewPaletted(frame.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), frame, frame.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
+	}
+
+	return frames, nil
+}
+
+func applyTint(dst *image.RGBA, src image.Image, hue float64) {
+	bounds := src.Bounds()
+	opacity := 0.5 // 50% opacity
+
+	// Convert hue to RGB color
+	r, g, b := hsvToRGB(hue, 1.0, 1.0)
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			// Get source pixel
+			srcR, srcG, srcB, srcA := src.At(x, y).RGBA()
+			srcR8 := uint8(srcR >> 8)
+			srcG8 := uint8(srcG >> 8)
+			srcB8 := uint8(srcB >> 8)
+			srcA8 := uint8(srcA >> 8)
+
+			// Blend tint color with source pixel at 50% opacity
+			// Formula: result = source * (1 - opacity) + tint * opacity
+			blendR := uint8(float64(srcR8)*(1.0-opacity) + float64(r)*opacity)
+			blendG := uint8(float64(srcG8)*(1.0-opacity) + float64(g)*opacity)
+			blendB := uint8(float64(srcB8)*(1.0-opacity) + float64(b)*opacity)
+
+			dst.Set(x, y, color.RGBA{blendR, blendG, blendB, srcA8})
 		}
 	}
 }
