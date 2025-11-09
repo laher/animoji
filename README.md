@@ -24,84 +24,27 @@ animoji -in image.png -out output.gif -resize 128 ripple tint-rgb zoom
 
 ## Subcommands
 
-### `360`
-Rotates the image 360 degrees clockwise.
+You can combine multiple subcommands to create complex effects. Effects are applied sequentially to each frame. For example: `animoji -in image.png -out output.gif -resize 128 ripple tint-rgb zoom` applies ripple, then tint, then zoom to each frame.
 
-**Requirements:** Input image must be square (same width and height).
+| Subcommand | Description | Example |
+|------------|-------------|---------|
+| `360` | Rotates the image 360 degrees clockwise. **Requires square image.** | ![360 rotation](testdata/laher-360.gif) |
+| `hue` | Cycles through the full hue range (0-360 degrees), creating a rainbow color effect. | ![Hue animation](testdata/laher-hue.gif) |
+| `zoom` | Progressively zooms into the center of the image, from 1x to 6x zoom. | ![Zoom animation](testdata/laher-zoom.gif) |
+| `pixelate` | Gradually pixelates the image, starting from the original and ending with a 4x4 grid. | ![Pixelate animation](testdata/laher-pixelate.gif) |
+| `tint-rgb` | Applies a tint layer with 50% opacity that cycles through RGB colors (red, yellow, green, cyan, blue, magenta). | ![Tint RGB animation](testdata/laher-tint-rgb.gif) |
+| `vibes` | Divides the image into four quarters and applies rotating color tints (violet, yellow, green, blue) with 50% opacity. | ![Vibes animation](testdata/laher-vibes.gif) |
+| `kaleidoscope` | Creates a kaleidoscope effect with rotating mirrored sections. | ![Kaleidoscope animation](testdata/laher-kaleidoscope.gif) |
+| `ripple` | Applies a ripple wave distortion that emanates from the center of the image. | ![Ripple animation](testdata/laher-ripple.gif) |
 
-**Example:**
+**Usage examples:**
 ```bash
+# Single effect
 animoji -in image.png -out output.gif -resize 128 360
-```
 
-### `hue`
-Cycles through the full hue range (0-360 degrees), creating a rainbow color effect.
-
-**Requirements:** Works with any image size.
-
-**Example:**
-```bash
-animoji -in image.png -out hue-animation.gif -resize 128 hue
-```
-
-### `zoom`
-Progressively zooms into the center of the image, from 1x to 6x zoom.
-
-**Requirements:** Works with any image size.
-
-**Example:**
-```bash
-animoji -in image.png -out zoom-animation.gif -resize 128 zoom
-```
-
-### `pixelate`
-Gradually pixelates the image, starting from the original image and ending with a 4x4 grid where each square is a uniform color.
-
-**Requirements:** Works with any image size.
-
-**Example:**
-```bash
-animoji -in image.png -out pixelate-animation.gif -resize 128 pixelate
-```
-
-### `tint-rgb`
-Applies a tint layer with 50% opacity that cycles through RGB colors (red, yellow, green, cyan, blue, magenta) and colors in between.
-
-**Requirements:** Works with any image size.
-
-**Example:**
-```bash
-animoji -in image.png -out tint-animation.gif -resize 128 tint-rgb
-```
-
-### `vibes`
-Divides the image into four quarters and applies rotating color tints (violet, yellow, green, blue) with 50% opacity. Each frame, the colors rotate to the next quarter.
-
-**Requirements:** Works with any image size.
-
-**Example:**
-```bash
-animoji -in image.png -out vibes-animation.gif -resize 128 vibes
-```
-
-### `kaleidoscope`
-Creates a kaleidoscope effect with rotating mirrored sections. The image is divided into segments that are mirrored and rotated.
-
-**Requirements:** Works with any image size.
-
-**Example:**
-```bash
-animoji -in image.png -out kaleidoscope-animation.gif -resize 128 kaleidoscope
-```
-
-### `ripple`
-Applies a ripple wave distortion that emanates from the center of the image, like dropping a stone in water.
-
-**Requirements:** Works with any image size.
-
-**Example:**
-```bash
-animoji -in image.png -out ripple-animation.gif -resize 128 ripple
+# Combined effects (applied sequentially to each frame)
+animoji -in image.png -out output.gif -resize 128 ripple tint-rgb zoom
+animoji -in image.png -out output.gif -resize 128 hue pixelate
 ```
 
 ## Flags
