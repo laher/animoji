@@ -24,38 +24,33 @@ func main() {
 
 	flag.Parse()
 
-	// Get subcommand from remaining arguments
+	// Get subcommands from remaining arguments
 	args := flag.Args()
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Error: subcommand is required\n")
+		fmt.Fprintf(os.Stderr, "Error: at least one subcommand is required\n")
 		printUsage()
 		os.Exit(1)
 	}
 
-	subcommand := args[0]
-	var animType string
+	// Validate all subcommands
+	validSubcommands := map[string]bool{
+		"360":          true,
+		"hue":          true,
+		"zoom":          true,
+		"pixelate":      true,
+		"tint-rgb":     true,
+		"vibes":         true,
+		"kaleidoscope": true,
+		"ripple":        true,
+	}
 
-	switch subcommand {
-	case "360":
-		animType = "rotate"
-	case "hue":
-		animType = "hue"
-	case "zoom":
-		animType = "zoom"
-	case "pixelate":
-		animType = "pixelate"
-	case "tint-rgb":
-		animType = "tint-rgb"
-	case "vibes":
-		animType = "vibes"
-	case "kaleidoscope":
-		animType = "kaleidoscope"
-	case "ripple":
-		animType = "ripple"
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n", subcommand)
-		printUsage()
-		os.Exit(1)
+	subcommands := args
+	for _, subcommand := range subcommands {
+		if !validSubcommands[subcommand] {
+			fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n", subcommand)
+			printUsage()
+			os.Exit(1)
+		}
 	}
 
 	if *frameCount <= 0 {
@@ -95,65 +90,32 @@ func main() {
 		}
 	}
 
-	// Generate frames
-	var frames []*image.Paletted
-	switch animType {
-	case "rotate":
-		var err error
-		frames, err = generateRotateFrames(img, 1.0, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
+	// Generate frames by applying all effects sequentially to each frame
+	frames := make([]*image.Paletted, *frameCount)
+	palette := createPalette(img)
+
+	for i := 0; i < *frameCount; i++ {
+		// Start with the original image
+		currentImg := img
+
+		// Apply each effect in sequence
+		for _, subcommand := range subcommands {
+			var err error
+			currentImg, err = applyEffectToFrame(currentImg, subcommand, i, *frameCount)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error applying effect %s to frame %d: %v\n", subcommand, i, err)
+				os.Exit(1)
+			}
 		}
-	case "hue":
-		var err error
-		frames, err = generateHueFrames(img, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
-		}
-	case "zoom":
-		var err error
-		frames, err = generateZoomFrames(img, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
-		}
-	case "pixelate":
-		var err error
-		frames, err = generatePixelateFrames(img, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
-		}
-	case "tint-rgb":
-		var err error
-		frames, err = generateTintRGBFrames(img, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
-		}
-	case "vibes":
-		var err error
-		frames, err = generateVibesFrames(img, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
-		}
-	case "kaleidoscope":
-		var err error
-		frames, err = generateKaleidoscopeFrames(img, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
-		}
-	case "ripple":
-		var err error
-		frames, err = generateRippleFrames(img, *frameCount)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating frames: %v\n", err)
-			os.Exit(1)
-		}
+
+		// Convert to paletted image for GIF
+		rgba := image.NewRGBA(currentImg.Bounds())
+		draw.Draw(rgba, rgba.Bounds(), currentImg, currentImg.Bounds().Min, draw.Src)
+
+		paletted := image.NewPaletted(rgba.Bounds(), palette)
+		draw.Draw(paletted, paletted.Bounds(), rgba, rgba.Bounds().Min, draw.Src)
+
+		frames[i] = paletted
 	}
 
 	// Reverse frames if requested
@@ -211,6 +173,136 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  ripple: Apply ripple wave distortion emanating from center\n")
 	fmt.Fprintf(os.Stderr, "\nExample:\n")
 	fmt.Fprintf(os.Stderr, "  animoji -in image.png -out output.gif -frames 12 -rate 6 360\n")
+	fmt.Fprintf(os.Stderr, "  animoji -in image.png -out output.gif -frames 12 -rate 6 ripple tint-rgb zoom\n")
+	fmt.Fprintf(os.Stderr, "\nNote: Multiple subcommands can be chained together. Effects are applied sequentially to each frame.\n")
+}
+
+func applyEffectToFrame(img image.Image, subcommand string, frameIdx, frameCount int) (image.Image, error) {
+	bounds := img.Bounds()
+	result := image.NewRGBA(bounds)
+
+	switch subcommand {
+	case "360":
+		direction := 1.0
+		angle := float64(frameIdx) * 2.0 * math.Pi / float64(frameCount) * direction
+		width := bounds.Dx()
+		height := bounds.Dy()
+		if width != height {
+			return nil, fmt.Errorf("image must be square (got %dx%d)", width, height)
+		}
+		size := width
+		center := float64(size) / 2.0
+		drawRotatedImage(result, img, center, center, angle)
+		return result, nil
+
+	case "hue":
+		hueShift := float64(frameIdx) * 360.0 / float64(frameCount)
+		applyHueShift(result, img, hueShift)
+		return result, nil
+
+	case "zoom":
+		minZoom := 1.0
+		maxZoom := 6.0
+		progress := float64(frameIdx) / float64(frameCount-1)
+		if frameCount == 1 {
+			progress = 0
+		}
+		zoom := minZoom + (maxZoom-minZoom)*progress
+		if zoom <= 1.0 {
+			draw.Draw(result, result.Bounds(), img, bounds.Min, draw.Src)
+		} else {
+			applyZoom(result, img, zoom)
+		}
+		return result, nil
+
+	case "pixelate":
+		width := bounds.Dx()
+		height := bounds.Dy()
+		minBlockSize := 1.0
+		maxBlockSizeX := float64(width) / 4.0
+		maxBlockSizeY := float64(height) / 4.0
+		maxBlockSize := math.Min(maxBlockSizeX, maxBlockSizeY)
+		progress := float64(frameIdx) / float64(frameCount-1)
+		if frameCount == 1 {
+			progress = 0
+		}
+		blockSize := minBlockSize + (maxBlockSize-minBlockSize)*progress
+		if blockSize <= 1.0 {
+			draw.Draw(result, result.Bounds(), img, bounds.Min, draw.Src)
+		} else {
+			applyPixelate(result, img, blockSize)
+		}
+		return result, nil
+
+	case "tint-rgb":
+		hue := float64(frameIdx) * 360.0 / float64(frameCount)
+		applyTint(result, img, hue)
+		return result, nil
+
+	case "vibes":
+		width := bounds.Dx()
+		height := bounds.Dy()
+		colors := []color.RGBA{
+			{255, 20, 147, 255},  // Hot Pink/Magenta
+			{255, 255, 0, 255},   // Bright Yellow
+			{50, 255, 50, 255},    // Bright Lime Green
+			{0, 200, 255, 255},   // Bright Cyan Blue
+		}
+		// Draw base image first
+		draw.Draw(result, result.Bounds(), img, bounds.Min, draw.Src)
+		// Apply tints to quarters
+		for quarter := 0; quarter < 4; quarter++ {
+			colorIndex := (frameIdx + quarter) % 4
+			tintColor := colors[colorIndex]
+			var startX, endX, startY, endY int
+			switch quarter {
+			case 0: // Top-left
+				startX = bounds.Min.X
+				endX = bounds.Min.X + width/2
+				startY = bounds.Min.Y
+				endY = bounds.Min.Y + height/2
+			case 1: // Top-right
+				startX = bounds.Min.X + width/2
+				endX = bounds.Max.X
+				startY = bounds.Min.Y
+				endY = bounds.Min.Y + height/2
+			case 2: // Bottom-left
+				startX = bounds.Min.X
+				endX = bounds.Min.X + width/2
+				startY = bounds.Min.Y + height/2
+				endY = bounds.Max.Y
+			case 3: // Bottom-right
+				startX = bounds.Min.X + width/2
+				endX = bounds.Max.X
+				startY = bounds.Min.Y + height/2
+				endY = bounds.Max.Y
+			}
+			applyTintToRegion(result, img, tintColor, startX, endX, startY, endY)
+		}
+		return result, nil
+
+	case "kaleidoscope":
+		width := bounds.Dx()
+		height := bounds.Dy()
+		centerX := float64(width) / 2.0
+		centerY := float64(height) / 2.0
+		rotationAngle := float64(frameIdx) * 2.0 * math.Pi / float64(frameCount)
+		applyKaleidoscope(result, img, centerX, centerY, rotationAngle)
+		return result, nil
+
+	case "ripple":
+		width := bounds.Dx()
+		height := bounds.Dy()
+		centerX := float64(width) / 2.0
+		centerY := float64(height) / 2.0
+		maxDistance := math.Sqrt(centerX*centerX + centerY*centerY)
+		phase := float64(frameIdx) * 2.0 * math.Pi / float64(frameCount)
+		applyRipple(result, img, centerX, centerY, phase, maxDistance)
+		return result, nil
+
+	default:
+		return nil, fmt.Errorf("unknown subcommand: %s", subcommand)
+	}
 }
 
 func loadImage(filename string) (image.Image, error) {

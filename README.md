@@ -11,12 +11,13 @@ go build -o animoji .
 ## Usage
 
 ```bash
-animoji [flags] <subcommand>
+animoji [flags] <subcommand> [subcommand ...]
 ```
 
-Flags come before the subcommand. For example:
+Flags come before the subcommand(s). Multiple subcommands can be chained together - effects are applied sequentially to each frame. For example:
 ```bash
 animoji -in image.png -out output.gif -frames 12 -rate 6 360
+animoji -in image.png -out output.gif -frames 12 -rate 6 ripple tint-rgb zoom
 ```
 
 ## Subcommands
@@ -148,6 +149,10 @@ animoji -in image.png -out kaleidoscope.gif -frames 12 -rate 6 kaleidoscope
 
 # Apply ripple wave effect
 animoji -in image.png -out ripple.gif -frames 12 -rate 6 ripple
+
+# Chain multiple effects together (applied sequentially to each frame)
+animoji -in image.png -out combined.gif -frames 12 -rate 6 ripple tint-rgb zoom
+animoji -in image.png -out combined2.gif -frames 12 -rate 6 hue pixelate
 ```
 
 ## Animation Details
