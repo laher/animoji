@@ -17,8 +17,8 @@ import (
 func main() {
 	inFile := flag.String("in", "", "Input image file (PNG or JPEG)")
 	outFile := flag.String("out", "", "Output GIF file")
-	frameCount := flag.Int("frames", 6, "Number of frames in the animation")
-	rate := flag.Int("rate", 3, "Frame rate in frames per second")
+	frameCount := flag.Int("frames", 12, "Number of frames in the animation")
+	rate := flag.Int("rate", 6, "Frame rate in frames per second")
 	reverse := flag.Bool("reverse", false, "Reverse the order of frames")
 	resize := flag.Int("resize", 0, "Resize image to specified width (height scaled proportionally, 0 = no resize)")
 
@@ -172,8 +172,8 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  kaleidoscope: Create kaleidoscope effect with rotating mirrored sections\n")
 	fmt.Fprintf(os.Stderr, "  ripple: Apply ripple wave distortion emanating from center\n")
 	fmt.Fprintf(os.Stderr, "\nExample:\n")
-	fmt.Fprintf(os.Stderr, "  animoji -in image.png -out output.gif -frames 12 -rate 6 360\n")
-	fmt.Fprintf(os.Stderr, "  animoji -in image.png -out output.gif -frames 12 -rate 6 ripple tint-rgb zoom\n")
+	fmt.Fprintf(os.Stderr, "  animoji -in image.png -out output.gif -resize 128 360\n")
+	fmt.Fprintf(os.Stderr, "  animoji -in image.png -out output.gif -resize 128 ripple tint-rgb zoom\n")
 	fmt.Fprintf(os.Stderr, "\nNote: Multiple subcommands can be chained together. Effects are applied sequentially to each frame.\n")
 }
 
